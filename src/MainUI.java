@@ -208,10 +208,11 @@ public class MainUI extends JFrame {
         mainPanel.add(headerLabel, BorderLayout.NORTH);
 
         // Center cards panel
-        JPanel cardsPanel = new JPanel(new GridLayout(4, 1, 15, 15));
+        JPanel cardsPanel = new JPanel(new GridLayout(5, 1, 15, 15));
         cardsPanel.setOpaque(false);
-        cardsPanel.setBorder(BorderFactory.createEmptyBorder(50, 50, 50, 50));
+        cardsPanel.setBorder(BorderFactory.createEmptyBorder(30, 50, 30, 50));
 
+        cardsPanel.add(createRedCardButton("➕ Register Recipient", e -> addRecipientUI()));
         cardsPanel.add(createRedCardButton("👁 View Recipients", e -> viewRecipientsUI()));
         cardsPanel.add(createRedCardButton("🔍 Search Recipient by Blood", e -> searchRecipientUI()));
         cardsPanel.add(createRedCardButton("🔗 Find Recipient Match", e -> findRecipientMatchUI()));
@@ -252,6 +253,101 @@ public class MainUI extends JFrame {
             organBank.addBloodDonorUI();
         } else {
             organBank.addOrganDonorUI();
+        }
+    }
+
+    private void addRecipientUI() {
+        JTextField nameField = new JTextField();
+        JTextField ageField = new JTextField();
+        JTextField bloodGroupField = new JTextField();
+        JTextField organField = new JTextField();
+        JTextField contactField = new JTextField();
+        JTextField locationField = new JTextField();
+        
+        Object[] message = {
+            "Name:", nameField,
+            "Age:", ageField,
+            "Required Blood Group (e.g., A+, B-, O+):", bloodGroupField,
+            "Required Organ (e.g., Kidney, Heart, Liver) - Optional:", organField,
+            "Contact Number:", contactField,
+            "Location:", locationField
+        };
+        
+        int option = JOptionPane.showConfirmDialog(this, message, "Register Recipient", JOptionPane.OK_CANCEL_OPTION);
+        if (option != JOptionPane.OK_OPTION) return;
+        
+        try {
+            String name = nameField.getText().trim();
+            String ageStr = ageField.getText().trim();
+            String bloodGroup = bloodGroupField.getText().trim().toUpperCase();
+            String organ = organField.getText().trim();
+            String contact = contactField.getText().trim();
+            String location = locationField.getText().trim();
+            
+            // Validation
+            if (name.isEmpty() || ageStr.isEmpty() || contact.isEmpty() || location.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "❌ Please fill in all required fields (Name, Age, Contact, Location).", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            int age = Integer.parseInt(ageStr);
+            if (age < 0 || age > 150) {
+                JOptionPane.showMessageDialog(this, "❌ Please enter a valid age (0-150).", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            // Validate blood group if provided
+            if (!bloodGroup.isEmpty()) {
+                String[] validTypes = {"A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"};
+                boolean isValid = false;
+                for (String type : validTypes) {
+                    if (type.equals(bloodGroup)) {
+                        isValid = true;
+                        break;
+                    }
+                }
+                if (!isValid) {
+                    JOptionPane.showMessageDialog(this, "❌ Invalid blood type. Valid types: A+, A-, B+, B-, AB+, AB-, O+, O-", "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+            
+            // Check if at least blood group or organ is provided
+            if (bloodGroup.isEmpty() && organ.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "❌ Please provide at least a required blood group or organ type.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            // Generate recipient ID
+            String recipientId = "RCP" + System.currentTimeMillis();
+            
+            // Create recipient object
+            Recipient recipient = new Recipient(
+                recipientId,
+                name,
+                age,
+                bloodGroup.isEmpty() ? null : bloodGroup,
+                organ.isEmpty() ? null : organ,
+                contact,
+                location
+            );
+            
+            // Save to database
+            recipient.saveToDB();
+            JOptionPane.showMessageDialog(this, 
+                "✅ Recipient registered successfully!\n\n" +
+                "Recipient ID: " + recipientId + "\n" +
+                "Name: " + name + "\n" +
+                "Required: " + (bloodGroup.isEmpty() ? organ : bloodGroup) +
+                (bloodGroup.isEmpty() || organ.isEmpty() ? "" : " / " + organ),
+                "Registration Success",
+                JOptionPane.INFORMATION_MESSAGE);
+            
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "❌ Invalid age format. Please enter a valid number.", "Error", JOptionPane.ERROR_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "❌ Error registering recipient: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
 
@@ -353,8 +449,12 @@ public class MainUI extends JFrame {
     
 
     private void viewRecipientsUI() {
-        List<Donor> recipients = manager.getDonors(); // Assuming all organ donors
-        showDonorsModalUI("All Recipients", recipients);
+        List<Recipient> recipients = manager.getRecipients();
+        if (recipients.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No recipients found.", "Empty List", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        showRecipientsModalUI("All Recipients", recipients);
     }
 
     private void searchDonorUI() {
