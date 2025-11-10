@@ -4,6 +4,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.List;
+import java.util.ArrayList;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -264,7 +265,7 @@ public class AdminUI extends JFrame {
         ));
 
         JButton viewBtn = createRedCardButton("View Donors");
-        JButton updateBtn = createRedCardButton("Update Donor");
+        JButton viewOrganBtn = createRedCardButton("View Organ Bank");
         JButton deleteBtn = createRedCardButton("Delete Donor");
         JButton addBloodBtn = createRedCardButton("Add Blood Units");
         JButton viewBloodBtn = createRedCardButton("View Blood Units");
@@ -273,7 +274,7 @@ public class AdminUI extends JFrame {
         JButton logoutBtn = createRedCardButton("Logout");
 
         card.add(viewBtn);
-        card.add(updateBtn);
+        card.add(viewOrganBtn);
         card.add(deleteBtn);
         card.add(addBloodBtn);
         card.add(viewBloodBtn);
@@ -283,7 +284,7 @@ public class AdminUI extends JFrame {
 
         // Button actions
         viewBtn.addActionListener(e -> viewAllDonors());
-        updateBtn.addActionListener(e -> updateDonor());
+        viewOrganBtn.addActionListener(e -> viewOrganBank());
         deleteBtn.addActionListener(e -> deleteDonor());
         addBloodBtn.addActionListener(e -> addBloodUnits());
         viewBloodBtn.addActionListener(e -> viewBloodUnits());
@@ -488,6 +489,151 @@ public class AdminUI extends JFrame {
         scrollPane.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(new Color(200, 0, 0), 2),
             "🩸 Blood Inventory - Total: " + totalUnits + " units",
+            javax.swing.border.TitledBorder.CENTER,
+            javax.swing.border.TitledBorder.TOP,
+            new Font("Segoe UI", Font.BOLD, 16),
+            new Color(200, 0, 0)
+        ));
+        
+        frame.add(scrollPane);
+        frame.setVisible(true);
+    }
+
+    private void viewOrganBank() {
+        // Check database connection first
+        try {
+            Connection testConn = DBConnection.getConnection();
+            if (testConn == null) {
+                JOptionPane.showMessageDialog(this,
+                    "❌ Database Connection Error\n\n" +
+                    "Cannot connect to the database. Please check:\n" +
+                    "• MySQL server is running\n" +
+                    "• Database credentials in DBConnection.java are correct\n" +
+                    "• Database 'bloodbank_db' exists",
+                    "Database Connection Required",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            testConn.close();
+        } catch (Exception dbEx) {
+            JOptionPane.showMessageDialog(this,
+                "❌ Database Connection Error\n\n" +
+                "Cannot connect to the database. Please check:\n" +
+                "• MySQL server is running\n" +
+                "• Database credentials in DBConnection.java are correct\n" +
+                "• Database 'bloodbank_db' exists",
+                "Database Connection Required",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        // Fetch organ inventory from database
+        List<Donor> organDonors = new ArrayList<>();
+        String sql = "SELECT * FROM donors WHERE organ_type IS NOT NULL AND organ_type != '' AND organ_type != 'null' " +
+                     "AND (status IS NULL OR status = 'active' OR status = '') ORDER BY organ_type, blood_group";
+        
+        try (Connection conn = DBConnection.getConnection()) {
+            if (conn == null) {
+                JOptionPane.showMessageDialog(this, "❌ Database connection failed.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+                
+                while (rs.next()) {
+                    Donor donor = new Donor(
+                        rs.getInt("donor_id"),
+                        rs.getString("name"),
+                        rs.getInt("age"),
+                        rs.getString("blood_group"),
+                        rs.getString("organ_type"),
+                        rs.getString("contact"),
+                        rs.getString("location"),
+                        rs.getObject("weight") != null ? rs.getInt("weight") : null
+                    );
+                    organDonors.add(donor);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("ERROR: Error fetching organ inventory: " + e.getMessage());
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, 
+                "❌ Error fetching organ inventory: " + e.getMessage(), 
+                "Error", 
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        // Display results
+        if (organDonors.isEmpty()) {
+            JOptionPane.showMessageDialog(this, 
+                "No organs found in inventory.\n\nUse 'Add Organ' to add organs to the inventory.", 
+                "Empty Organ Bank", 
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        // Create and display table
+        JFrame frame = new JFrame("Organ Bank Inventory");
+        frame.setSize(1000, 600);
+        frame.setLocationRelativeTo(this);
+        
+        DefaultTableModel model = new DefaultTableModel(
+                new String[]{"Organ Type", "Blood Group", "Donor Name", "Contact", "Location", "Age", "Weight"}, 0) {
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        
+        // Count organs by type
+        Map<String, Integer> organCounts = new LinkedHashMap<>();
+        for (Donor donor : organDonors) {
+            String organType = donor.getOrganType();
+            organCounts.put(organType, organCounts.getOrDefault(organType, 0) + 1);
+            
+            model.addRow(new Object[]{
+                organType != null ? organType : "-",
+                donor.getBloodGroup() != null ? donor.getBloodGroup() : "-",
+                donor.getName(),
+                donor.getContact(),
+                donor.getLocation(),
+                donor.getAge(),
+                donor.getWeight() != null ? donor.getWeight() + " kg" : "-"
+            });
+        }
+        
+        // Add summary row
+        StringBuilder summary = new StringBuilder("Total: ");
+        for (Map.Entry<String, Integer> entry : organCounts.entrySet()) {
+            summary.append(entry.getKey()).append(" (").append(entry.getValue()).append("), ");
+        }
+        String summaryText = summary.toString();
+        if (summaryText.endsWith(", ")) {
+            summaryText = summaryText.substring(0, summaryText.length() - 2);
+        }
+        
+        JTable table = new JTable(model);
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        table.setRowHeight(25);
+        
+        // Style the header
+        table.getTableHeader().setBackground(new Color(200, 0, 0));
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 14));
+        table.getTableHeader().setForeground(Color.WHITE);
+        
+        // Style the table
+        table.setGridColor(new Color(230, 150, 150));
+        table.setBackground(Color.WHITE);
+        table.setSelectionBackground(new Color(255, 200, 200));
+        
+        // Auto-resize columns
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(new Color(200, 0, 0), 2),
+            "🫀 Organ Bank Inventory - " + summaryText + " | Total Organs: " + organDonors.size(),
             javax.swing.border.TitledBorder.CENTER,
             javax.swing.border.TitledBorder.TOP,
             new Font("Segoe UI", Font.BOLD, 16),
